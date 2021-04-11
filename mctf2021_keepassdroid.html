@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>MCTF2021 - Android - KeepassDroid | kik0uO7</title>
+<meta name="generator" content="Jekyll v4.1.1" />
+<meta property="og:title" content="MCTF2021 - Android - KeepassDroid" />
+<meta name="author" content="kik0uO7" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="MidnightflagCTF2021 Organisé par l’ESN’hack. La CTF c’est déroulée la nuit du 10/04/21 au 11/04/21. Grâce à ABH le pro de l’OSINT, on termine dans le TOP 10 du classement général. TL;DR Ce post est dédié à la résolution du challenge KeepassDroid. Basiquement pas besoin d’installer l’application des outils décompilant les apk sont nombreux. Voilà ma démarche de réfléxion pour résoudre ce challenge. Décompilation via jadx-gui Compréhension de l’algo et identification du problème Implémentation en python Task J’ai créé ma propre application pour android, je vous mets au défi de trouver le mot de passe ! CrackMe.apk Décompilation La décompilation se fait facilement avec jadx La classe com.example.crackme.data.LoginDataSorce contient les éléments permettant de dériver le mot de passe. En rouge, la partie qui va vérifier si le mot de passe entré est le bon En jaune, fonction qui est utiliser lors de la vérification du mot de passe et qui permet de calculer le secret En vert, la partie qui va être utiliser pour générer le secret. La classe com.example.crackme.data.ABS126 contient quant à l’algorithme de chiffrement utiliser. Compréhension de l’algorithme Après 5 minutes de lecture de code on a : str1 = AQcgGBpJbn0SNhtlHBZKVQ== str2 = https://www.youtube.com/watch?v=3IWXcFRVmgg Le secret est le XOR de str1 (decodé en base64) avec str2. Le secret est hashé avec la fonction sha1, et on garde uniquement les 16 premiers bytes (=32 caractère si sha1 est hexadécimale) Le secret est utilisé comme clé pour chiffrer via AES ECB Implémentation from Crypto.Cipher import AES from base64 import b64decode from hashlib import sha1 xor = lambda b1, b2: b&quot;&quot;.join([bytes([b1[i]^b2[i] for i in range(len(b1))])]) str1 = b&quot;AQcgGBpJbn0SNhtlHBZKVQ==&quot; str2 = b&quot;https://www.youtube.com/watch?v=3IWXcFRVmgg&quot; flag = b&quot;GjnphyGDLqgkcf3G84xEPk5tDpHmLI/e5bRv4x1s+mh+vEtX1D2yY1eXZnqCIm+E&quot; sha1 = sha1(xor(b64decode(str1), str2)).digest() aes = AES.new(sha1[:16], AES.MODE_ECB) flag = aes.decrypt(b64decode(flag)) print(flag.decode()) Flag MCTF{4ndr01d_b4s1c_cr4ck_m3_ch4ll3ng3_!!}" />
+<meta property="og:description" content="MidnightflagCTF2021 Organisé par l’ESN’hack. La CTF c’est déroulée la nuit du 10/04/21 au 11/04/21. Grâce à ABH le pro de l’OSINT, on termine dans le TOP 10 du classement général. TL;DR Ce post est dédié à la résolution du challenge KeepassDroid. Basiquement pas besoin d’installer l’application des outils décompilant les apk sont nombreux. Voilà ma démarche de réfléxion pour résoudre ce challenge. Décompilation via jadx-gui Compréhension de l’algo et identification du problème Implémentation en python Task J’ai créé ma propre application pour android, je vous mets au défi de trouver le mot de passe ! CrackMe.apk Décompilation La décompilation se fait facilement avec jadx La classe com.example.crackme.data.LoginDataSorce contient les éléments permettant de dériver le mot de passe. En rouge, la partie qui va vérifier si le mot de passe entré est le bon En jaune, fonction qui est utiliser lors de la vérification du mot de passe et qui permet de calculer le secret En vert, la partie qui va être utiliser pour générer le secret. La classe com.example.crackme.data.ABS126 contient quant à l’algorithme de chiffrement utiliser. Compréhension de l’algorithme Après 5 minutes de lecture de code on a : str1 = AQcgGBpJbn0SNhtlHBZKVQ== str2 = https://www.youtube.com/watch?v=3IWXcFRVmgg Le secret est le XOR de str1 (decodé en base64) avec str2. Le secret est hashé avec la fonction sha1, et on garde uniquement les 16 premiers bytes (=32 caractère si sha1 est hexadécimale) Le secret est utilisé comme clé pour chiffrer via AES ECB Implémentation from Crypto.Cipher import AES from base64 import b64decode from hashlib import sha1 xor = lambda b1, b2: b&quot;&quot;.join([bytes([b1[i]^b2[i] for i in range(len(b1))])]) str1 = b&quot;AQcgGBpJbn0SNhtlHBZKVQ==&quot; str2 = b&quot;https://www.youtube.com/watch?v=3IWXcFRVmgg&quot; flag = b&quot;GjnphyGDLqgkcf3G84xEPk5tDpHmLI/e5bRv4x1s+mh+vEtX1D2yY1eXZnqCIm+E&quot; sha1 = sha1(xor(b64decode(str1), str2)).digest() aes = AES.new(sha1[:16], AES.MODE_ECB) flag = aes.decrypt(b64decode(flag)) print(flag.decode()) Flag MCTF{4ndr01d_b4s1c_cr4ck_m3_ch4ll3ng3_!!}" />
+<link rel="canonical" href="/mctf2021_keepassdroid" />
+<meta property="og:url" content="/mctf2021_keepassdroid" />
+<meta property="og:site_name" content="kik0uO7" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-04-11T17:55:43+02:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="MCTF2021 - Android - KeepassDroid" />
+<script type="application/ld+json">
+{"url":"/mctf2021_keepassdroid","mainEntityOfPage":{"@type":"WebPage","@id":"/mctf2021_keepassdroid"},"author":{"@type":"Person","name":"kik0uO7"},"description":"MidnightflagCTF2021 Organisé par l’ESN’hack. La CTF c’est déroulée la nuit du 10/04/21 au 11/04/21. Grâce à ABH le pro de l’OSINT, on termine dans le TOP 10 du classement général. TL;DR Ce post est dédié à la résolution du challenge KeepassDroid. Basiquement pas besoin d’installer l’application des outils décompilant les apk sont nombreux. Voilà ma démarche de réfléxion pour résoudre ce challenge. Décompilation via jadx-gui Compréhension de l’algo et identification du problème Implémentation en python Task J’ai créé ma propre application pour android, je vous mets au défi de trouver le mot de passe ! CrackMe.apk Décompilation La décompilation se fait facilement avec jadx La classe com.example.crackme.data.LoginDataSorce contient les éléments permettant de dériver le mot de passe. En rouge, la partie qui va vérifier si le mot de passe entré est le bon En jaune, fonction qui est utiliser lors de la vérification du mot de passe et qui permet de calculer le secret En vert, la partie qui va être utiliser pour générer le secret. La classe com.example.crackme.data.ABS126 contient quant à l’algorithme de chiffrement utiliser. Compréhension de l’algorithme Après 5 minutes de lecture de code on a : str1 = AQcgGBpJbn0SNhtlHBZKVQ== str2 = https://www.youtube.com/watch?v=3IWXcFRVmgg Le secret est le XOR de str1 (decodé en base64) avec str2. Le secret est hashé avec la fonction sha1, et on garde uniquement les 16 premiers bytes (=32 caractère si sha1 est hexadécimale) Le secret est utilisé comme clé pour chiffrer via AES ECB Implémentation from Crypto.Cipher import AES from base64 import b64decode from hashlib import sha1 xor = lambda b1, b2: b&quot;&quot;.join([bytes([b1[i]^b2[i] for i in range(len(b1))])]) str1 = b&quot;AQcgGBpJbn0SNhtlHBZKVQ==&quot; str2 = b&quot;https://www.youtube.com/watch?v=3IWXcFRVmgg&quot; flag = b&quot;GjnphyGDLqgkcf3G84xEPk5tDpHmLI/e5bRv4x1s+mh+vEtX1D2yY1eXZnqCIm+E&quot; sha1 = sha1(xor(b64decode(str1), str2)).digest() aes = AES.new(sha1[:16], AES.MODE_ECB) flag = aes.decrypt(b64decode(flag)) print(flag.decode()) Flag MCTF{4ndr01d_b4s1c_cr4ck_m3_ch4ll3ng3_!!}","@type":"BlogPosting","headline":"MCTF2021 - Android - KeepassDroid","dateModified":"2021-04-11T17:55:43+02:00","datePublished":"2021-04-11T17:55:43+02:00","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="kik0uO7" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">kik0uO7</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/posts/">Related posts</a><a class="page-link" href="/tags/">Tags</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">MCTF2021 - Android - KeepassDroid</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2021-04-11T17:55:43+02:00" itemprop="datePublished">
+        Apr 11, 2021
+      </time>• 
+          <span itemprop="author" itemscope itemtype="http://schema.org/Person">
+            <span class="p-author h-card" itemprop="name">kik0uO7</span></span></p>
+      
+      
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h1 id="midnightflagctf2021">MidnightflagCTF2021</h1>
+<p>Organisé par l’ESN’hack. La CTF c’est déroulée la nuit du 10/04/21 au 11/04/21.
+Grâce à <a href="https://www.abhw0rld.com/">ABH</a> le pro de l’OSINT, on termine dans le TOP 10 du classement général.</p>
+
+<p><img src="assets/ctf/MCTF2021/scoreboard.png" alt="scoreboard" /></p>
+
+<h1 id="tldr">TL;DR</h1>
+<p>Ce post est dédié à la résolution du challenge <strong>KeepassDroid</strong>.</p>
+
+<p>Basiquement pas besoin d’installer l’application des outils décompilant les apk sont nombreux.<br />
+Voilà ma démarche de réfléxion pour résoudre ce challenge.</p>
+
+<ol>
+  <li>Décompilation via <code class="language-plaintext highlighter-rouge">jadx-gui</code></li>
+  <li>Compréhension de l’algo et identification du problème</li>
+  <li>Implémentation en python</li>
+</ol>
+
+<h1 id="task">Task</h1>
+<p>J’ai créé ma propre application pour android, je vous mets au défi de trouver le mot de passe !</p>
+
+<p><a href="https://ctf.midnightflag.fr/files/7672a6b0ce1cbdb912f455c86cdeb3e1/CrackMe.apk?token=eyJ1c2VyX2lkIjoxNSwidGVhbV9pZCI6NSwiZmlsZV9pZCI6NjZ9.YHMj7A.mjW_dGrltKjGB2ogR5DDDN4grYE">CrackMe.apk</a></p>
+
+<h1 id="décompilation">Décompilation</h1>
+<p>La décompilation se fait facilement avec jadx</p>
+
+<p>La classe <code class="language-plaintext highlighter-rouge">com.example.crackme.data.LoginDataSorce</code> contient les éléments permettant de dériver le mot de passe.</p>
+
+<p><img src="assets/ctf/MCTF2021/jadx-gui_login_data_source.png" alt="jadx-gui_login_data_source" /></p>
+
+<ul>
+  <li>En rouge, la partie qui va vérifier si le mot de passe entré est le bon</li>
+  <li>En jaune, fonction qui est utiliser lors de la vérification du mot de passe et qui permet de calculer le <strong>secret</strong></li>
+  <li>En vert, la partie qui va être utiliser pour générer le <em>secret</em>.</li>
+</ul>
+
+<p>La classe <code class="language-plaintext highlighter-rouge">com.example.crackme.data.ABS126</code> contient quant à l’algorithme de chiffrement utiliser.</p>
+
+<p><img src="assets/ctf/MCTF2021/jadx-gui_abs126.png" alt="jadx-gui_abs126" /></p>
+
+<h1 id="compréhension-de-lalgorithme">Compréhension de l’algorithme</h1>
+<p>Après 5 minutes de lecture de code on a :</p>
+<ul>
+  <li>str1  = AQcgGBpJbn0SNhtlHBZKVQ==</li>
+  <li>str2 = https://www.youtube.com/watch?v=3IWXcFRVmgg</li>
+</ul>
+
+<p>Le <em>secret</em> est le XOR de str1 (decodé en base64) avec str2.</p>
+
+<p>Le secret est hashé avec la fonction sha1, et on garde uniquement les 16 premiers bytes <em>(=32 caractère si sha1 est hexadécimale)</em></p>
+
+<p>Le secret est utilisé comme clé pour chiffrer via <strong>AES ECB</strong></p>
+
+<h1 id="implémentation">Implémentation</h1>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">Crypto.Cipher</span> <span class="kn">import</span> <span class="n">AES</span>
+<span class="kn">from</span> <span class="nn">base64</span> <span class="kn">import</span> <span class="n">b64decode</span>
+<span class="kn">from</span> <span class="nn">hashlib</span> <span class="kn">import</span> <span class="n">sha1</span>
+
+<span class="n">xor</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span><span class="p">:</span> <span class="s">b""</span><span class="p">.</span><span class="n">join</span><span class="p">([</span><span class="nb">bytes</span><span class="p">([</span><span class="n">b1</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">^</span><span class="n">b2</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">b1</span><span class="p">))])])</span>
+
+<span class="n">str1</span> <span class="o">=</span> <span class="s">b"AQcgGBpJbn0SNhtlHBZKVQ=="</span>
+<span class="n">str2</span> <span class="o">=</span> <span class="s">b"https://www.youtube.com/watch?v=3IWXcFRVmgg"</span>
+<span class="n">flag</span> <span class="o">=</span> <span class="s">b"GjnphyGDLqgkcf3G84xEPk5tDpHmLI/e5bRv4x1s+mh+vEtX1D2yY1eXZnqCIm+E"</span>
+
+<span class="n">sha1</span> <span class="o">=</span> <span class="n">sha1</span><span class="p">(</span><span class="n">xor</span><span class="p">(</span><span class="n">b64decode</span><span class="p">(</span><span class="n">str1</span><span class="p">),</span> <span class="n">str2</span><span class="p">)).</span><span class="n">digest</span><span class="p">()</span>
+<span class="n">aes</span> <span class="o">=</span> <span class="n">AES</span><span class="p">.</span><span class="n">new</span><span class="p">(</span><span class="n">sha1</span><span class="p">[:</span><span class="mi">16</span><span class="p">],</span> <span class="n">AES</span><span class="p">.</span><span class="n">MODE_ECB</span><span class="p">)</span>
+<span class="n">flag</span> <span class="o">=</span> <span class="n">aes</span><span class="p">.</span><span class="n">decrypt</span><span class="p">(</span><span class="n">b64decode</span><span class="p">(</span><span class="n">flag</span><span class="p">))</span>
+
+<span class="k">print</span><span class="p">(</span><span class="n">flag</span><span class="p">.</span><span class="n">decode</span><span class="p">())</span>
+</code></pre></div></div>
+
+<h1 id="flag">Flag</h1>
+<p><code class="language-plaintext highlighter-rouge">MCTF{4ndr01d_b4s1c_cr4ck_m3_ch4ll3ng3_!!}</code></p>
+
+  </div><a class="u-url" href="/mctf2021_keepassdroid" hidden></a>
+</article>
+      </div>
+    </main><!-- ici y'aura peut être des trucs --></body>
+
+</html>
